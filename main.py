@@ -5,13 +5,13 @@ import numpy as np
 import pandas as pd
 import re
 import matplotlib.pyplot as plt
-from sklearn.model_selection import StratifiedShuffleSplit
+from sklearn.model_selection import StratifiedShuffleSplit, train_test_split
 from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import accuracy_score, recall_score, precision_score, f1_score
 from sklearn.ensemble import RandomForestClassifier
 from collections import defaultdict
 import pickle
-
+import random
 def parse_args():
     parser = argparse.ArgumentParser()
     
@@ -49,9 +49,55 @@ def parse_args():
     
     return parser.parse_args()
 
-def train_test_split(X, y, test_size=0.2):
+def train_test_split_rand(X, y, test_size=0.2, seed = None):
+    """Split a dataset into training and test at random
+
+    Parameters
+    ----------
+    X : pd.DataFrame
+        Features of the dataset
+    y : pd.DataFrame
+        Labels of the dataset
+    test_size : float, optional
+        Percentage of data in test set, by default 0.2
+    seed : int, optional
+        Seed for Random State, by default None
+
+    Returns
+    -------
+    X_train, X_test, y_train, y_test
+        Splitted data
+    """
+
+    X = X.values
+    y = y.values
+    
+    # split
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=seed)
+        
+    return X_train, X_test, y_train, y_test
+
+def train_test_split_balanced(X, y, test_size=0.2, seed = None):
+    """Split a dataset into training and test while preserving the distribution of y labels
+
+    Parameters
+    ----------
+    X : pd.DataFrame
+        Features of the dataset
+    y : pd.DataFrame
+        Labels of the dataset
+    test_size : float, optional
+        Percentage of data in test set, by default 0.2
+    seed : int, optional
+        Seed for Random State, by default None
+
+    Returns
+    -------
+    X_train, X_test, y_train, y_test
+        Splitted data
+    """
     # split into training and test sets while preserving label distribution
-    sss = StratifiedShuffleSplit(n_splits=1, test_size=test_size, random_state=42)
+    sss = StratifiedShuffleSplit(n_splits=1, test_size=test_size, random_state=seed)
 
     X = X.values
     y = y.values
@@ -64,8 +110,26 @@ def train_test_split(X, y, test_size=0.2):
         
     return X_train, X_test, y_train, y_test
 
+
 def train_test_split_pos(X, y, pos_frac=0.2, test_size=0.2):
-    """Sample frac percentage of positive samples to be in training data"""
+    """Sample frac percentage of positive samples to be in training data
+
+    Parameters
+    ----------
+    X : pd.DataFrame
+        Features of the dataset
+    y : pd.DataFrame
+        Labels of the dataset
+    pos_frac : float, optional
+        Number of positive samples to be in the training set, by default 0.2
+    test_size : float, optional
+        Percentage of data in the test set, by default 0.2
+
+    Returns
+    -------
+    X_train, X_test, y_train, y_test
+        Splitted data
+    """
 
     # sample 20 % of positive samples to be in training  pool
     y_pos = y.loc[y.y == 1].sample(frac=pos_frac) 
@@ -96,7 +160,24 @@ def train_test_split_pos(X, y, pos_frac=0.2, test_size=0.2):
     
     return X_train.values, X_test.values, y_train.values, y_test.values
 
+
 def calc_performance(y_true, y_pred, prefix=''):
+    """Calculate performance metrics between predicted labels and true labels
+
+    Parameters
+    ----------
+    y_true : [type]
+        [description]
+    y_pred : [type]
+        [description]
+    prefix : str, optional
+        [description], by default ''
+
+    Returns
+    -------
+    [type]
+        [description]
+    """
     acc = accuracy_score(y_true=y_true, y_pred=y_pred)
     recall = recall_score(y_true=y_true, y_pred=y_pred)
     precision = precision_score(y_true=y_true, y_pred=y_pred, zero_division=0)
@@ -106,7 +187,42 @@ def calc_performance(y_true, y_pred, prefix=''):
 
     return acc, recall, precision, f1
 
+
 def uncertainty_sampling(X_pool, y_pool, X_test, y_test, model, model_args, add_n=1, n_init=10, steps=None, verbose=0, threshold=0.7):
+    """Active Learning system with pool based sampling by uncertainty
+
+    Parameters
+    ----------
+    X_pool : numpy.array
+        Features in pool
+    y_pool : numpy.array
+        Labels in pool
+    X_test : numpy.array
+        Features in test
+    y_test : numpy.array
+        Labels in test
+    model : sklearn.model
+        Sklearns implementation of a model, either RandomForestClassifier or MLPClassifier
+    model_args : dict
+        Argumnts for model function
+    add_n : int, optional
+        How many samples to add at each iteration, by default 1
+    n_init : int, optional
+        How many samples from pool are in the training data in the first iteration, by default 10
+    steps : int, optional
+        Number of iterations to run. If None, then run until all samples from pool have been used or if threshold given, stop when threshold is reached, by default None
+    verbose : int, optional
+        If 1, print test performance in each iteration, by default 0
+    threshold : float, optional
+        If given, stop learning system if accuracy score on test set is >= threshold, by default 0.7
+
+    Returns
+    -------
+    clf : sklearn.model
+        Trained classifier
+    test_acc, test_recall, test_precision, test_f1: lists
+        Performance measures on test set at each iteration
+    """
 
     # mix up order of pool indexes
     order = np.random.permutation(range(len(X_pool)))
@@ -179,7 +295,9 @@ def uncertainty_sampling(X_pool, y_pool, X_test, y_test, model, model_args, add_
     
     return clf, test_acc, test_recall, test_precision, test_f1
 
+
 def train(X, y, split_func, sampling_func, add_n, steps=12, model=RandomForestClassifier, model_args={}, split_args={}):
+    """Wrapper function for setting up the active learning system"""
 
     X_train, X_test, y_train, y_test = split_func(X, y, **split_args)
 
@@ -200,22 +318,14 @@ def train(X, y, split_func, sampling_func, add_n, steps=12, model=RandomForestCl
     return test_acc, test_recall, test_precision, test_f1 
 
 
-def viz_perf(test_acc, test_recall, test_precision, test_f1, axes, legend):
-    test_performances = [test_acc, test_recall, test_precision, test_f1]
-    labels = ['Accuracy', 'Recall', 'Precision', 'F1']
-    for ax, perf, label in zip(axes.flatten(), test_performances, labels):
-        ax.plot(*tuple(np.array(perf).T), label=legend)
-        ax.set_xlabel('# samples in training data')
-        ax.set_ylabel(f"{label} on test set")
-        ax.set_title(label)
-
 if __name__ == "__main__":
     args = parse_args()
     
-    # load file with fasta sequences if given
+    # load files
     X = pd.read_csv(args.X_filename, index_col=[0, 1])
     y = pd.read_csv(args.y_filename,  index_col=[0, 1])
 
+    # parameter settings for classifiers
     models = {
         'Random Forest': {
             'model': RandomForestClassifier,
@@ -231,69 +341,53 @@ if __name__ == "__main__":
         }
     }
 
-    fig, axes = plt.subplots(2, 2, figsize=(10, 7))
 
-    res = defaultdict(dict)
-
-    split_funcs = [train_test_split, train_test_split_pos]
+    # functions and settings for data splitters 
+    split_funcs = [train_test_split_rand, train_test_split_balanced, train_test_split_pos]
     split_args = {
+        'Random': [{}],
         'Stratified': [{}],
-        'Random positive sampling': [{'pos_frac': x} for x in [0.05, 0.1, 0.2]]
+        'Random positive sampling': [{'pos_frac': x} for x in [0.01, 0.2, 0.45]],
     }
+    split_keys = ['Random', 'Stratified', 'Random positive sampling']
+    
+    # dict to store results in
+    res = defaultdict(lambda: defaultdict(dict))
+
+    # test each combination
     for model_name, model_settings in models.items():
-        for split_func, split_key in zip(split_funcs, split_args.keys()):
+        for split_func, split_key in zip(split_funcs, split_keys):
             for split_arg in split_args[split_key]:
                 
                 split_label = split_key
                 if 'Random positive sampling' == split_key:
                     split_label = split_key.replace('Random', f"{split_arg['pos_frac']*100}%")
                 
-                print(f"{model_name} {split_label}")
-                test_acc, test_recall, test_precision, test_f1 = train(
-                    X=X, 
-                    y=y, 
-                    split_func=split_func, 
-                    sampling_func=uncertainty_sampling,
-                    add_n=args.add_n,
-                    model=model_settings['model'],
-                    model_args=model_settings['model_args'],
-                    split_args=split_arg
-                )
+                for i in range(5): # repeat 5 times
+                    print(f"{model_name} {split_label} - iteration: {i+1}/5")
 
-                res[model_name][split_label] = {
-                    #'test_acc': test_acc,
-                    'test_recall': test_recall,
-                    'test_precision': test_precision,
-                    'test_f1': test_f1
-                }
+                    # set random seed
+                    random.seed()
+
+                    test_acc, test_recall, test_precision, test_f1 = train(
+                        X=X, 
+                        y=y, 
+                        split_func=split_func, 
+                        sampling_func=uncertainty_sampling,
+                        add_n=args.add_n,
+                        model=model_settings['model'],
+                        model_args=model_settings['model_args'],
+                        split_args=split_arg
+                    )
+
+                    res[model_name][split_label][i] ={
+                        #'test_acc': test_acc,
+                        'test_recall': test_recall,
+                        'test_precision': test_precision,
+                        'test_f1': test_f1
+                    }
     
-    with open('res.pkl', 'wb') as dest:
+    # dump result dict in a pickled file
+    with open('results.pkl', 'wb') as dest:
         pickle.dump(res, dest)
-    # for ax in axes.flatten():
-    #     ax.legend()
-    # fig.tight_layout()
-    # plt.show()
-
-    # # split data into training and test data
-    # X_train, X_test, y_train, y_test = train_test_split(X, y)
-
-    # # start training
-    # clf, test_acc, test_recall, test_precision, test_f1 = uncertainty_sampling(
-    #     X_pool = X_train,
-    #     X_test = X_test,
-    #     y_pool = y_train,
-    #     y_test = y_test,
-    #     model = RandomForestClassifier,
-    #     model_args={
-    #         'n_estimators': 20, 
-    #         'min_samples_split': 7, 
-    #         'n_jobs': -1
-    #     },
-    #     verbose=1,
-    #     add_n=args.add_n,
-    #     n_init=args.add_n,
-    #     threshold=None,
-    #     steps=12
-    # )
-
     
