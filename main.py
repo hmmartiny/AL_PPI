@@ -4,7 +4,6 @@ import argparse
 import numpy as np
 import pandas as pd
 import re
-import matplotlib.pyplot as plt
 from sklearn.model_selection import StratifiedShuffleSplit, train_test_split
 from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import accuracy_score, recall_score, precision_score, f1_score
@@ -317,6 +316,8 @@ def train(X, y, split_func, sampling_func, add_n, steps=12, model=RandomForestCl
 
     return test_acc, test_recall, test_precision, test_f1 
 
+def dd():
+    return defaultdict(dict)
 
 if __name__ == "__main__":
     args = parse_args()
@@ -337,7 +338,9 @@ if __name__ == "__main__":
         }, 
         'Neural Network': {
             'model': MLPClassifier,
-            'model_args': {}
+            'model_args': {
+                'max_iter': 1000
+            }
         }
     }
 
@@ -352,7 +355,7 @@ if __name__ == "__main__":
     split_keys = ['Random', 'Stratified', 'Random positive sampling']
     
     # dict to store results in
-    res = defaultdict(lambda: defaultdict(dict))
+    res = defaultdict(dd)
 
     # test each combination
     for model_name, model_settings in models.items():
@@ -386,7 +389,7 @@ if __name__ == "__main__":
                         'test_precision': test_precision,
                         'test_f1': test_f1
                     }
-    
+
     # dump result dict in a pickled file
     with open('results.pkl', 'wb') as dest:
         pickle.dump(res, dest)

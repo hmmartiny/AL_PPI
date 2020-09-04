@@ -46,7 +46,7 @@ for pf in all_files:
 all_data = pd.concat(sets, axis=0)
 all_data.columns = all_cols
 all_data.drop_duplicates(['p1', 'p2'], inplace=True)
-all_data.set_index(['p1', 'p2'])
+all_data.set_index(['p1', 'p2'], inplace=True)
 print("all:", all_data.shape)
 
 # reduce data features 
